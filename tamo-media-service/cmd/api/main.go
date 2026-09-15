@@ -17,6 +17,7 @@ import (
 	"github.com/tamoimages/media-service/internal/commerce"
 	"github.com/tamoimages/media-service/internal/config"
 	"github.com/tamoimages/media-service/internal/httpapi"
+	"github.com/tamoimages/media-service/internal/payments"
 	"github.com/tamoimages/media-service/internal/platform/database"
 	"github.com/tamoimages/media-service/internal/platform/kafka"
 	"github.com/tamoimages/media-service/internal/platform/storage"
@@ -56,7 +57,7 @@ func main() {
 	releaseService := releases.New(db, objectStore, cfg.UploadURLTTL)
 	catalogService := catalog.New(db, objectStore, cfg.UploadURLTTL)
 	collectionService := collections.New(db)
-	commerceService := commerce.New(db)
+	commerceService := commerce.NewCheckout(db, payments.NewPaystack(cfg.PaystackSecretKey, cfg.PaystackAPIURL, 10*time.Second), cfg.PaymentCallbackURL)
 	server := &http.Server{
 		Addr: cfg.Address(), Handler: httpapi.New(httpapi.Config{
 			WebOrigin: cfg.WebOrigin, DatabaseURL: cfg.DatabaseURL, RedisAddress: cfg.RedisAddress,

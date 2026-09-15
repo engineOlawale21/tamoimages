@@ -34,6 +34,10 @@ func (f *fakeCommerce) Add(_ context.Context, _ string, _ string, license string
 func (f *fakeCommerce) Remove(context.Context, string, string) (commerce.Cart, error) {
 	return commerce.Cart{ID: "cart-1", Items: []commerce.CartItem{}, Currency: "NGN"}, nil
 }
+func (f *fakeCommerce) Checkout(context.Context, string, string, string) (commerce.Order, error) {
+	return commerce.Order{ID: "order-1", Status: "pending_payment", Currency: "NGN", TotalAmountMinor: 1500000}, nil
+}
+func (f *fakeCommerce) Webhook(context.Context, []byte, string) error { return nil }
 
 func (f *fakeBatches) Create(_ context.Context, contributorID, name string) (batches.Batch, error) {
 	f.createdName = name

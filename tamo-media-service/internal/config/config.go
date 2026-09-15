@@ -35,27 +35,31 @@ type Config struct {
 	FFprobePath            string
 	FFmpegPath             string
 	ClamScanPath           string
+	PaystackSecretKey      string
+	PaystackAPIURL         string
+	PaymentCallbackURL     string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:    value("APP_ENV", "development"),
-		WebOrigin:      value("WEB_ORIGIN", "http://localhost:3000"),
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		RedisAddress:   os.Getenv("REDIS_ADDR"),
-		RedisKeyPrefix: value("REDIS_KEY_PREFIX", "tamo:development:media"),
-		KafkaBrokers:   split(value("KAFKA_BROKERS", "localhost:9092")),
-		S3Endpoint:     os.Getenv("S3_ENDPOINT"),
-		S3Bucket:       os.Getenv("S3_BUCKET"),
-		S3AccessKey:    os.Getenv("S3_ACCESS_KEY"),
-		S3SecretKey:    os.Getenv("S3_SECRET_KEY"),
-		MaxBodyBytes:   32 << 20,
-		JWTSecret:      os.Getenv("JWT_SECRET"),
-		JWTIssuer:      value("JWT_ISSUER", "tamo-identity"),
-		JWTAudience:    value("JWT_AUDIENCE", "tamo-platform"),
-		FFprobePath:    value("FFPROBE_PATH", "ffprobe"),
-		FFmpegPath:     value("FFMPEG_PATH", "ffmpeg"),
-		ClamScanPath:   value("CLAMSCAN_PATH", "clamscan"),
+		Environment:       value("APP_ENV", "development"),
+		WebOrigin:         value("WEB_ORIGIN", "http://localhost:3000"),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		RedisAddress:      os.Getenv("REDIS_ADDR"),
+		RedisKeyPrefix:    value("REDIS_KEY_PREFIX", "tamo:development:media"),
+		KafkaBrokers:      split(value("KAFKA_BROKERS", "localhost:9092")),
+		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
+		S3Bucket:          os.Getenv("S3_BUCKET"),
+		S3AccessKey:       os.Getenv("S3_ACCESS_KEY"),
+		S3SecretKey:       os.Getenv("S3_SECRET_KEY"),
+		MaxBodyBytes:      32 << 20,
+		JWTSecret:         os.Getenv("JWT_SECRET"),
+		JWTIssuer:         value("JWT_ISSUER", "tamo-identity"),
+		JWTAudience:       value("JWT_AUDIENCE", "tamo-platform"),
+		FFprobePath:       value("FFPROBE_PATH", "ffprobe"),
+		FFmpegPath:        value("FFMPEG_PATH", "ffmpeg"),
+		ClamScanPath:      value("CLAMSCAN_PATH", "clamscan"),
+		PaystackSecretKey: os.Getenv("PAYSTACK_SECRET_KEY"), PaystackAPIURL: value("PAYSTACK_API_URL", "https://api.paystack.co"), PaymentCallbackURL: value("PAYMENT_CALLBACK_URL", "http://localhost:3000/cart"),
 	}
 	var err error
 	if cfg.Port, err = integer("PORT", 5000, 1, 65535); err != nil {
@@ -117,7 +121,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("REDIS_KEY_PREFIX is required")
 	}
 	if cfg.Environment == "production" {
-		for _, key := range []string{"WEB_ORIGIN", "DATABASE_URL", "REDIS_ADDR", "REDIS_KEY_PREFIX", "KAFKA_BROKERS", "S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "JWT_SECRET"} {
+		for _, key := range []string{"WEB_ORIGIN", "DATABASE_URL", "REDIS_ADDR", "REDIS_KEY_PREFIX", "KAFKA_BROKERS", "S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "JWT_SECRET", "PAYSTACK_SECRET_KEY", "PAYMENT_CALLBACK_URL"} {
 			if strings.TrimSpace(os.Getenv(key)) == "" {
 				return Config{}, fmt.Errorf("%s is required in production", key)
 			}

@@ -91,6 +91,10 @@ type BuyerCart struct {
 	ID, BuyerID string
 	Items       []BuyerCartItem
 }
+type CommerceOrder struct {
+	ID, BuyerID, Status, PaymentReference, Currency, CheckoutURL string
+	TotalAmountMinor                                             int64
+}
 
 type CatalogQuery struct {
 	Text, Kind, UsageType, Orientation, Location, Sort string
@@ -410,6 +414,59 @@ func (d *Database) RemoveBuyerCartItem(ctx context.Context, buyerID, assetID str
 		return BuyerCart{}, err
 	}
 	return d.BuyerCart(ctx, buyerID)
+}
+func (d *Database) CreateOrderFromCart(ctx context.Context, id, buyerID, idempotencyKey, reference string) (CommerceOrder, error) {
+	var order CommerceOrder
+	err := d.InTransaction(ctx, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `SELECT id,buyer_id,status,payment_reference,currency,total_amount_minor,COALESCE(checkout_url,'') FROM commerce_orders WHERE buyer_id=$1 AND idempotency_key=$2`, buyerID, idempotencyKey).Scan(&order.ID, &order.BuyerID, &order.Status, &order.PaymentReference, &order.Currency, &order.TotalAmountMinor, &order.CheckoutURL)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		var cartID string
+		if err = tx.QueryRow(ctx, `SELECT id FROM buyer_carts WHERE buyer_id=$1 AND status='active' FOR UPDATE`, buyerID).Scan(&cartID); err != nil {
+			return err
+		}
+		if err = tx.QueryRow(ctx, `INSERT INTO commerce_orders(id,buyer_id,idempotency_key,payment_reference,currency,total_amount_minor) SELECT $1,$2,$3,$4,min(currency),sum(unit_amount_minor) FROM buyer_cart_items WHERE cart_id=$5 HAVING count(*)>0 RETURNING id,buyer_id,status,payment_reference,currency,total_amount_minor,COALESCE(checkout_url,'')`, id, buyerID, idempotencyKey, reference, cartID).Scan(&order.ID, &order.BuyerID, &order.Status, &order.PaymentReference, &order.Currency, &order.TotalAmountMinor, &order.CheckoutURL); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO commerce_order_items(order_id,media_asset_id,contributor_id,license_code,license_name,unit_amount_minor,currency) SELECT $1,i.media_asset_id,a.contributor_id,i.license_code,p.name,i.unit_amount_minor,i.currency FROM buyer_cart_items i JOIN media_assets a ON a.id=i.media_asset_id JOIN license_products p ON p.code=i.license_code WHERE i.cart_id=$2`, id, cartID); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE buyer_carts SET status='converted',updated_at=now() WHERE id=$1`, cartID)
+		return err
+	})
+	return order, err
+}
+func (d *Database) SetOrderCheckoutURL(ctx context.Context, id, buyerID, checkoutURL string) (CommerceOrder, error) {
+	var order CommerceOrder
+	err := d.pool.QueryRow(ctx, `UPDATE commerce_orders SET checkout_url=$3 WHERE id=$1 AND buyer_id=$2 AND status='pending_payment' RETURNING id,buyer_id,status,payment_reference,currency,total_amount_minor,checkout_url`, id, buyerID, checkoutURL).Scan(&order.ID, &order.BuyerID, &order.Status, &order.PaymentReference, &order.Currency, &order.TotalAmountMinor, &order.CheckoutURL)
+	return order, err
+}
+func (d *Database) MarkOrderPaid(ctx context.Context, eventKey, reference string, amount int64, currency string) (bool, error) {
+	changed := false
+	err := d.InTransaction(ctx, func(tx pgx.Tx) error {
+		result, err := tx.Exec(ctx, `INSERT INTO payment_webhook_events(provider,event_key,payment_reference) VALUES('paystack',$1,$2) ON CONFLICT DO NOTHING`, eventKey, reference)
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected() == 0 {
+			changed = true
+			return nil
+		}
+		result, err = tx.Exec(ctx, `UPDATE commerce_orders SET status='paid',paid_at=now() WHERE payment_reference=$1 AND status='pending_payment' AND total_amount_minor=$2 AND currency=$3`, reference, amount, currency)
+		if err != nil {
+			return err
+		}
+		changed = result.RowsAffected() == 1
+		if !changed {
+			return fmt.Errorf("payment amount, currency, or reference does not match a pending order")
+		}
+		return nil
+	})
+	return changed, err
 }
 
 func (d *Database) UpdateMediaAssetMetadata(ctx context.Context, id, contributorID string, metadata MediaAsset) (MediaAsset, error) {

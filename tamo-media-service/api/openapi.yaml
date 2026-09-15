@@ -55,6 +55,33 @@ paths:
       summary: Remove an item from the active cart
       responses:
         '200': {description: Updated cart, content: {application/json: {schema: {$ref: '#/components/schemas/Cart'}}}}
+  /api/v1/checkout:
+    post:
+      tags: [Commerce]
+      summary: Snapshot the active cart and initialize Paystack checkout
+      parameters:
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties: {email: {type: string, format: email}}
+      responses:
+        '201': {description: Immutable order and provider checkout URL, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}
+        '400': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/payments/paystack/webhook:
+    post:
+      tags: [Commerce]
+      security: []
+      summary: Receive a Paystack event verified with the raw-body HMAC-SHA512 signature
+      responses:
+        '200': {description: Event accepted or already processed}
+        '401': {$ref: '#/components/responses/Problem'}
   /api/v1/media:
     get:
       tags: [Media]
@@ -417,6 +444,16 @@ components:
               currency: {type: string, pattern: '^[A-Z]{3}$'}
         subtotalMinor: {type: integer, format: int64, minimum: 0}
         currency: {type: string, pattern: '^[A-Z]{3}$'}
+    Order:
+      type: object
+      required: [id, status, paymentReference, totalAmountMinor, currency]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [pending_payment, paid, cancelled, payment_failed]}
+        paymentReference: {type: string}
+        totalAmountMinor: {type: integer, format: int64, minimum: 1}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        checkoutUrl: {type: string, format: uri}
     CreateUploadSession:
       type: object
       additionalProperties: false

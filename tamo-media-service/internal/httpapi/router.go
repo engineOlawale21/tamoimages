@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -41,6 +42,11 @@ type commerceService interface {
 	Get(context.Context, string) (commerce.Cart, error)
 	Add(context.Context, string, string, string) (commerce.Cart, error)
 	Remove(context.Context, string, string) (commerce.Cart, error)
+	Checkout(context.Context, string, string, string) (commerce.Order, error)
+	Webhook(context.Context, []byte, string) error
+}
+type checkoutRequest struct {
+	Email string `json:"email"`
 }
 type collectionService interface {
 	Create(context.Context, string, string) (collections.Collection, error)
@@ -212,6 +218,30 @@ func New(cfg Config) http.Handler {
 		}
 		writeJSON(w, cart, http.StatusOK)
 	})))
+	mux.Handle("POST /api/v1/checkout", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		var input checkoutRequest
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxBodyBytes)
+		if len(key) < 8 || len(key) > 128 || json.NewDecoder(r.Body).Decode(&input) != nil || !strings.Contains(input.Email, "@") {
+			writeProblem(w, r, http.StatusBadRequest, "Invalid checkout", "A valid email and Idempotency-Key are required.")
+			return
+		}
+		order, err := cfg.Commerce.Checkout(r.Context(), principalFrom(r.Context()).Subject, input.Email, key)
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Checkout unavailable", "Checkout could not be initialized.")
+			return
+		}
+		writeJSON(w, order, http.StatusCreated)
+	})))
+	mux.HandleFunc("POST /api/v1/payments/paystack/webhook", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxBodyBytes)
+		body, err := io.ReadAll(r.Body)
+		if err != nil || cfg.Commerce.Webhook(r.Context(), body, r.Header.Get("x-paystack-signature")) != nil {
+			writeProblem(w, r, http.StatusUnauthorized, "Invalid webhook", "The payment event could not be verified.")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	mux.Handle("GET /api/v1/media", contributorOnly(cfg.TokenVerifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page, err := cfg.Uploads.List(r.Context(), principalFrom(r.Context()).Subject)
 		if err != nil {
