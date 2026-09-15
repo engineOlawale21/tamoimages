@@ -22,6 +22,13 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run openapi:export --workspace tamo-auth-service
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://contract:contract@localhost:5432/contract
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: contract-only-secret-with-at-least-32-characters
+          RATE_LIMIT_HMAC_SECRET: separate-contract-secret-with-at-least-32-characters
       - run: npm run contracts:validate
       - run: npm run verify:js
         env:
@@ -66,6 +73,7 @@ jobs:
           KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092
           KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
           KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_INTER_BROKER_LISTENER_NAME: EXTERNAL
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
           KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -174,7 +182,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
-      - uses: aquasecurity/trivy-action@0.28.0
+      - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
