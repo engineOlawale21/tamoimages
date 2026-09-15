@@ -1,0 +1,23 @@
+{
+  "name": "tamo-auth-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "test": "jest --runInBand",
+    "test:integration": "jest --runInBand test/authentication-lifecycle.integration.spec.ts test/redis.integration.spec.ts test/authentication.http.integration.spec.ts",
+    "lint": "tsc --noEmit",
+    "migration:up": "npm run build && node dist/database/migrate.js up",
+    "migration:down": "npm run build && node dist/database/migrate.js down",
+    "retention:run": "npm run build && node dist/compliance/retention.js",
+    "openapi:export": "npm run build && node dist/openapi.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6", "@nestjs/config": "^4.0.2", "@nestjs/core": "^11.1.6", "@nestjs/jwt": "^11.0.1", "@nestjs/passport": "^11.0.5", "@nestjs/platform-express": "^11.1.6", "@nestjs/swagger": "^11.2.0", "bcrypt": "^6.0.0", "class-transformer": "^0.5.1", "class-validator": "^0.14.2", "ioredis": "6.0.0", "kafkajs": "2.2.4", "passport": "^0.7.0", "passport-jwt": "^4.0.1", "pg": "8.16.3", "reflect-metadata": "^0.2.2", "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "13.0.0", "@nestjs/cli": "^11.0.10", "@nestjs/testing": "^11.1.6", "@types/bcrypt": "^6.0.0", "@types/express": "^5.0.3", "@types/jest": "^30.0.0", "@types/node": "^24.3.0", "@types/passport-jwt": "^4.0.1", "@types/pg": "8.15.5", "jest": "^30.1.2", "ts-jest": "^29.4.1", "typescript": "^5.9.2"
+  }
+}
