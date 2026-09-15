@@ -1,0 +1,481 @@
+openapi: 3.1.0
+info:
+  title: Tamo Media API
+  version: 1.0.0
+  description: Media catalogue and upload orchestration API.
+servers:
+  - url: http://localhost:5000
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/health/live:
+    get:
+      tags: [Health]
+      security: []
+      responses:
+        '200': {description: Process is alive}
+  /api/v1/health/ready:
+    get:
+      tags: [Health]
+      security: []
+      responses:
+        '200': {description: Required dependencies are reachable}
+        '503': {description: At least one dependency is unavailable}
+  /api/v1/media:
+    get:
+      tags: [Media]
+      summary: List contributor-owned media
+      responses:
+        '200':
+          description: Most recent contributor-owned media and signed ready variants
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaPage'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/batches:
+    get:
+      tags: [Batches]
+      summary: List contributor-owned batches
+      responses:
+        '200': {description: Recent batches}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Batches]
+      summary: Create a draft media batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 120}
+      responses:
+        '201':
+          description: Draft batch created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaBatch'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/batches/{id}/items:
+    post:
+      tags: [Batches]
+      summary: Assign ready media to a draft batch
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assetId]
+              properties:
+                assetId: {type: string, format: uuid}
+      responses:
+        '204': {description: Media assigned to batch}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/batches/{id}/submit:
+    post:
+      tags: [Batches]
+      summary: Submit a non-empty draft batch for review
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Batch submitted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaBatch'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/batches/{id}/review:
+    patch:
+      tags: [Batches]
+      summary: Record a reviewer decision and contributor-visible feedback
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: {type: string, enum: [in_review, approved, rejected]}
+                feedback: {type: string, maxLength: 2000}
+      responses:
+        '200': {description: Review state saved, content: {application/json: {schema: {$ref: '#/components/schemas/MediaBatch'}}}}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/upload-sessions:
+    post:
+      tags: [Uploads]
+      summary: Create a direct upload session
+      description: Creates a pending contributor-owned asset and a short-lived presigned object-storage upload URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadSession'
+      responses:
+        '201':
+          description: Pending asset and direct upload instructions
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadSession'}
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '415':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /api/v1/media/{id}:
+    get:
+      tags: [Media]
+      summary: Get a contributor-owned media asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Current asset processing status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaAsset'}
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [Media]
+      summary: Delete contributor-owned media and its private stored objects
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: "Media, derivatives, and releases deleted; completion evidence retained"}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/upload-sessions/{id}/complete:
+    post:
+      tags: [Uploads]
+      summary: Confirm a direct upload
+      description: Verifies the private object exists with the declared size, then moves the asset from pending to uploaded. Repeated completion is idempotent.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Upload verified
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaAsset'}
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /api/v1/media/{id}/retry:
+    post:
+      tags: [Media]
+      summary: Retry processing for a contributor-owned failed asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Processing was requeued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaAsset'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/media/{id}/metadata:
+    patch:
+      tags: [Media]
+      summary: Update contributor-owned ready-media metadata
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MediaMetadataInput'}
+      responses:
+        '200':
+          description: Metadata saved
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaAsset'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/media/{id}/releases:
+    get:
+      tags: [Releases]
+      summary: List active release forms for owned media
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Release forms and three-form limit}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Releases]
+      summary: Create a private release-form upload session
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateReleaseSession'}
+      responses:
+        '201': {description: Pending release and presigned PUT instructions}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/media/{id}/releases/{releaseId}/complete:
+    post:
+      tags: [Releases]
+      summary: Verify and complete a release-form upload
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: releaseId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Release upload verified}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/collections:
+    get:
+      tags: [Collections]
+      summary: List the authenticated buyer's collections
+      responses:
+        '200': {description: Buyer collections and saved media identifiers}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+    post:
+      tags: [Collections]
+      summary: Create a buyer collection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties: {name: {type: string, minLength: 1, maxLength: 120}}
+      responses:
+        '201': {description: Collection created}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /api/v1/collections/{id}/items/{assetId}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: assetId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      tags: [Collections]
+      summary: Save an approved asset to an owned collection
+      responses: {'204': {description: Item saved}, '404': {$ref: '#/components/responses/Problem'}}
+    delete:
+      tags: [Collections]
+      summary: Remove an asset from an owned collection
+      responses: {'204': {description: Item removed}, '404': {$ref: '#/components/responses/Problem'}}
+  /api/v1/favourites:
+    get:
+      tags: [Collections]
+      summary: List the authenticated buyer's favourite media identifiers
+      responses: {'200': {description: Favourite media identifiers}}
+  /api/v1/favourites/{assetId}:
+    parameters:
+      - {name: assetId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      tags: [Collections]
+      summary: Mark an approved asset as a favourite
+      responses: {'204': {description: Favourite saved}, '404': {$ref: '#/components/responses/Problem'}}
+    delete:
+      tags: [Collections]
+      summary: Remove an asset from favourites
+      responses: {'204': {description: Favourite removed}}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateUploadSession:
+      type: object
+      additionalProperties: false
+      required: [kind, filename, contentType, sizeBytes]
+      properties:
+        kind: {type: string, enum: [image, video, illustration]}
+        filename: {type: string, minLength: 1, maxLength: 255}
+        contentType: {type: string, minLength: 1, maxLength: 255}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+    MediaAsset:
+      type: object
+      required: [id, kind, filename, contentType, sizeBytes, status, variants, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [image, video, illustration]}
+        filename: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer, format: int64}
+        status: {type: string, enum: [pending, uploaded, processing, ready, failed, deleted]}
+        durationSeconds: {type: number, minimum: 0}
+        width: {type: integer, minimum: 1}
+        height: {type: integer, minimum: 1}
+        codecName: {type: string}
+        failureCode: {type: string, description: Bounded privacy-safe processing failure classification}
+        title: {type: string, minLength: 1, maxLength: 160}
+        description: {type: string, maxLength: 2000}
+        keywords: {type: array, maxItems: 50, items: {type: string, minLength: 1, maxLength: 64}}
+        location: {type: string, maxLength: 200}
+        usageType: {type: string, enum: [creative, editorial]}
+        processedAt: {type: string, format: date-time}
+        variants:
+          type: array
+          items: {$ref: '#/components/schemas/MediaVariant'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    MediaVariant:
+      type: object
+      required: [kind, url, contentType, sizeBytes, expiresAt]
+      properties:
+        kind: {type: string, enum: [thumbnail, poster, small, medium, large]}
+        url: {type: string, format: uri, description: Short-lived signed download URL}
+        contentType: {type: string}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        width: {type: integer, minimum: 1}
+        height: {type: integer, minimum: 1}
+        expiresAt: {type: string, format: date-time}
+    MediaPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MediaAsset'}
+        total: {type: integer, minimum: 0}
+    MediaBatch:
+      type: object
+      required: [id, name, status, itemCount, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 120}
+        status: {type: string, enum: [draft, submitted, in_review, approved, rejected]}
+        itemCount: {type: integer, minimum: 0}
+        submittedAt: {type: string, format: date-time}
+        reviewFeedback: {type: string, maxLength: 2000}
+        reviewedAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    MediaMetadataInput:
+      type: object
+      additionalProperties: false
+      required: [title, keywords, usageType]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        description: {type: string, maxLength: 2000}
+        keywords: {type: array, minItems: 1, maxItems: 50, items: {type: string, minLength: 1, maxLength: 64}}
+        location: {type: string, maxLength: 200}
+        usageType: {type: string, enum: [creative, editorial]}
+    CreateReleaseSession:
+      type: object
+      additionalProperties: false
+      required: [releaseType, filename, contentType, sizeBytes]
+      properties:
+        releaseType: {type: string, enum: [model, property]}
+        filename: {type: string, minLength: 1, maxLength: 255}
+        contentType: {type: string, enum: [application/pdf, image/jpeg, image/png]}
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+    UploadSession:
+      type: object
+      required: [asset, upload]
+      properties:
+        asset: {$ref: '#/components/schemas/MediaAsset'}
+        upload:
+          type: object
+          required: [method, url, expiresAt]
+          properties:
+            method: {type: string, const: PUT}
+            url: {type: string, format: uri}
+            expiresAt: {type: string, format: date-time}
+    Problem:
+      type: object
+      required: [type, title, status, detail, instance, correlationId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+        correlationId: {type: string}
+  responses:
+    Problem:
+      description: Request could not be completed
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
