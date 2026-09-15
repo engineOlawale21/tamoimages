@@ -5,6 +5,7 @@ import (
 	"github.com/tamoimages/media-service/internal/payments"
 	"github.com/tamoimages/media-service/internal/platform/database"
 	"testing"
+	"time"
 )
 
 type fakeRepository struct{ cart database.BuyerCart }
@@ -40,7 +41,7 @@ func (f *fakeRepository) SetOrderCheckoutURL(_ context.Context, id, buyer, url s
 func TestCheckoutSendsImmutableServerTotal(t *testing.T) {
 	repo := &fakeRepository{}
 	gateway := &fakeGateway{}
-	service := NewCheckout(repo, gateway, "https://app.test/cart")
+	service := NewCheckout(repo, gateway, "https://app.test/cart", nil, time.Minute)
 	order, err := service.Checkout(context.Background(), "buyer-1", "buyer@example.test", "request-123")
 	if err != nil || gateway.amount != 1500000 || gateway.reference != order.PaymentReference || order.CheckoutURL == "" {
 		t.Fatalf("unexpected checkout %+v %v", order, err)
@@ -48,6 +49,12 @@ func TestCheckoutSendsImmutableServerTotal(t *testing.T) {
 }
 func (f *fakeRepository) MarkOrderPaid(context.Context, string, string, int64, string) (bool, error) {
 	return true, nil
+}
+func (f *fakeRepository) BuyerPurchases(context.Context, string) ([]database.Purchase, error) {
+	return []database.Purchase{}, nil
+}
+func (f *fakeRepository) LicensedDownload(context.Context, string, string, string) (database.LicensedDownload, error) {
+	return database.LicensedDownload{}, nil
 }
 func TestCartUsesRepositoryPrice(t *testing.T) {
 	service := New(&fakeRepository{cart: database.BuyerCart{ID: "cart-1"}})

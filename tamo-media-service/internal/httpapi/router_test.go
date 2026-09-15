@@ -38,6 +38,12 @@ func (f *fakeCommerce) Checkout(context.Context, string, string, string) (commer
 	return commerce.Order{ID: "order-1", Status: "pending_payment", Currency: "NGN", TotalAmountMinor: 1500000}, nil
 }
 func (f *fakeCommerce) Webhook(context.Context, []byte, string) error { return nil }
+func (f *fakeCommerce) Purchases(context.Context, string) ([]commerce.Purchase, error) {
+	return []commerce.Purchase{}, nil
+}
+func (f *fakeCommerce) Download(context.Context, string, string, string) (commerce.Download, error) {
+	return commerce.Download{}, nil
+}
 
 func (f *fakeBatches) Create(_ context.Context, contributorID, name string) (batches.Batch, error) {
 	f.createdName = name

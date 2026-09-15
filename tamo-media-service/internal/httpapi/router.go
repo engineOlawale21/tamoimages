@@ -44,6 +44,8 @@ type commerceService interface {
 	Remove(context.Context, string, string) (commerce.Cart, error)
 	Checkout(context.Context, string, string, string) (commerce.Order, error)
 	Webhook(context.Context, []byte, string) error
+	Purchases(context.Context, string) ([]commerce.Purchase, error)
+	Download(context.Context, string, string, string) (commerce.Download, error)
 }
 type checkoutRequest struct {
 	Email string `json:"email"`
@@ -242,6 +244,26 @@ func New(cfg Config) http.Handler {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
+	mux.Handle("GET /api/v1/orders", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		items, err := cfg.Commerce.Purchases(r.Context(), principalFrom(r.Context()).Subject)
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Purchases unavailable", "Purchase history could not be retrieved.")
+			return
+		}
+		writeJSON(w, map[string]any{"items": items}, http.StatusOK)
+	})))
+	mux.Handle("POST /api/v1/downloads/{entitlementId}", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		item, err := cfg.Commerce.Download(r.Context(), principalFrom(r.Context()).Subject, r.PathValue("entitlementId"), correlationID(r.Context()))
+		if errors.Is(err, commerce.ErrUnavailable) {
+			writeProblem(w, r, http.StatusNotFound, "Download unavailable", "The entitlement does not exist or has been revoked.")
+			return
+		}
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Download unavailable", "A signed download could not be created.")
+			return
+		}
+		writeJSON(w, item, http.StatusOK)
+	})))
 	mux.Handle("GET /api/v1/media", contributorOnly(cfg.TokenVerifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page, err := cfg.Uploads.List(r.Context(), principalFrom(r.Context()).Subject)
 		if err != nil {

@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/tamoimages/media-service/internal/payments"
 	"github.com/tamoimages/media-service/internal/platform/database"
+	"net/url"
+	"time"
 )
 
 var ErrUnavailable = errors.New("asset or license unavailable")
@@ -37,6 +39,23 @@ type Order struct {
 	Currency         string `json:"currency"`
 	CheckoutURL      string `json:"checkoutUrl,omitempty"`
 }
+type Purchase struct {
+	ID               string     `json:"id"`
+	Status           string     `json:"status"`
+	PaymentReference string     `json:"paymentReference"`
+	TotalAmountMinor int64      `json:"totalAmountMinor"`
+	Currency         string     `json:"currency"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	PaidAt           *time.Time `json:"paidAt,omitempty"`
+	EntitlementIDs   []string   `json:"entitlementIds"`
+}
+type Download struct {
+	URL         string    `json:"url"`
+	Filename    string    `json:"filename"`
+	ContentType string    `json:"contentType"`
+	LicenseCode string    `json:"licenseCode"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
 
 type Repository interface {
 	BuyerCart(context.Context, string) (database.BuyerCart, error)
@@ -45,6 +64,11 @@ type Repository interface {
 	CreateOrderFromCart(context.Context, string, string, string, string) (database.CommerceOrder, error)
 	SetOrderCheckoutURL(context.Context, string, string, string) (database.CommerceOrder, error)
 	MarkOrderPaid(context.Context, string, string, int64, string) (bool, error)
+	BuyerPurchases(context.Context, string) ([]database.Purchase, error)
+	LicensedDownload(context.Context, string, string, string) (database.LicensedDownload, error)
+}
+type Signer interface {
+	PresignGet(context.Context, string, time.Duration) (*url.URL, error)
 }
 type Gateway interface {
 	Initialize(context.Context, string, int64, string, string, string) (payments.Checkout, error)
@@ -55,11 +79,13 @@ type Service struct {
 	repository  Repository
 	gateway     Gateway
 	callbackURL string
+	signer      Signer
+	downloadTTL time.Duration
 }
 
 func New(repository Repository) *Service { return &Service{repository: repository} }
-func NewCheckout(repository Repository, gateway Gateway, callbackURL string) *Service {
-	return &Service{repository: repository, gateway: gateway, callbackURL: callbackURL}
+func NewCheckout(repository Repository, gateway Gateway, callbackURL string, signer Signer, downloadTTL time.Duration) *Service {
+	return &Service{repository: repository, gateway: gateway, callbackURL: callbackURL, signer: signer, downloadTTL: downloadTTL}
 }
 func (s *Service) Get(ctx context.Context, buyerID string) (Cart, error) {
 	record, err := s.repository.BuyerCart(ctx, buyerID)
@@ -127,6 +153,31 @@ func (s *Service) Add(ctx context.Context, buyerID, assetID, licenseCode string)
 func (s *Service) Remove(ctx context.Context, buyerID, assetID string) (Cart, error) {
 	record, err := s.repository.RemoveBuyerCartItem(ctx, buyerID, assetID)
 	return public(record), err
+}
+func (s *Service) Purchases(ctx context.Context, buyerID string) ([]Purchase, error) {
+	records, err := s.repository.BuyerPurchases(ctx, buyerID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]Purchase, 0, len(records))
+	for _, r := range records {
+		items = append(items, Purchase{ID: r.ID, Status: r.Status, PaymentReference: r.PaymentReference, TotalAmountMinor: r.TotalAmountMinor, Currency: r.Currency, CreatedAt: r.CreatedAt, PaidAt: r.PaidAt, EntitlementIDs: r.EntitlementIDs})
+	}
+	return items, nil
+}
+func (s *Service) Download(ctx context.Context, buyerID, entitlementID, correlationID string) (Download, error) {
+	record, err := s.repository.LicensedDownload(ctx, buyerID, entitlementID, correlationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Download{}, ErrUnavailable
+	}
+	if err != nil {
+		return Download{}, err
+	}
+	signed, err := s.signer.PresignGet(ctx, record.StorageKey, s.downloadTTL)
+	if err != nil {
+		return Download{}, err
+	}
+	return Download{URL: signed.String(), Filename: record.Filename, ContentType: record.ContentType, LicenseCode: record.LicenseCode, ExpiresAt: time.Now().UTC().Add(s.downloadTTL)}, nil
 }
 func public(record database.BuyerCart) Cart {
 	items := make([]CartItem, 0, len(record.Items))

@@ -57,7 +57,7 @@ func main() {
 	releaseService := releases.New(db, objectStore, cfg.UploadURLTTL)
 	catalogService := catalog.New(db, objectStore, cfg.UploadURLTTL)
 	collectionService := collections.New(db)
-	commerceService := commerce.NewCheckout(db, payments.NewPaystack(cfg.PaystackSecretKey, cfg.PaystackAPIURL, 10*time.Second), cfg.PaymentCallbackURL)
+	commerceService := commerce.NewCheckout(db, payments.NewPaystack(cfg.PaystackSecretKey, cfg.PaystackAPIURL, 10*time.Second), cfg.PaymentCallbackURL, objectStore, cfg.UploadURLTTL)
 	server := &http.Server{
 		Addr: cfg.Address(), Handler: httpapi.New(httpapi.Config{
 			WebOrigin: cfg.WebOrigin, DatabaseURL: cfg.DatabaseURL, RedisAddress: cfg.RedisAddress,

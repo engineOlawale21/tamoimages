@@ -82,6 +82,23 @@ paths:
       responses:
         '200': {description: Event accepted or already processed}
         '401': {$ref: '#/components/responses/Problem'}
+  /api/v1/orders:
+    get:
+      tags: [Commerce]
+      summary: List the buyer's purchase history and active entitlement identifiers
+      responses:
+        '200': {description: Purchase history}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /api/v1/downloads/{entitlementId}:
+    parameters:
+      - {in: path, name: entitlementId, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [Commerce]
+      summary: Create a short-lived signed URL for a licensed original
+      responses:
+        '200': {description: Authorized signed download, content: {application/json: {schema: {$ref: '#/components/schemas/LicensedDownload'}}}}
+        '404': {$ref: '#/components/responses/Problem'}
   /api/v1/media:
     get:
       tags: [Media]
@@ -454,6 +471,15 @@ components:
         totalAmountMinor: {type: integer, format: int64, minimum: 1}
         currency: {type: string, pattern: '^[A-Z]{3}$'}
         checkoutUrl: {type: string, format: uri}
+    LicensedDownload:
+      type: object
+      required: [url, filename, contentType, licenseCode, expiresAt]
+      properties:
+        url: {type: string, format: uri}
+        filename: {type: string}
+        contentType: {type: string}
+        licenseCode: {type: string}
+        expiresAt: {type: string, format: date-time}
     CreateUploadSession:
       type: object
       additionalProperties: false

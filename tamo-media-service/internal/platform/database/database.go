@@ -95,6 +95,14 @@ type CommerceOrder struct {
 	ID, BuyerID, Status, PaymentReference, Currency, CheckoutURL string
 	TotalAmountMinor                                             int64
 }
+type Purchase struct {
+	ID, Status, PaymentReference, Currency string
+	TotalAmountMinor                       int64
+	CreatedAt                              time.Time
+	PaidAt                                 *time.Time
+	EntitlementIDs                         []string
+}
+type LicensedDownload struct{ EntitlementID, StorageKey, Filename, ContentType, LicenseCode string }
 
 type CatalogQuery struct {
 	Text, Kind, UsageType, Orientation, Location, Sort string
@@ -464,9 +472,40 @@ func (d *Database) MarkOrderPaid(ctx context.Context, eventKey, reference string
 		if !changed {
 			return fmt.Errorf("payment amount, currency, or reference does not match a pending order")
 		}
+		_, err = tx.Exec(ctx, `INSERT INTO download_entitlements(order_id,buyer_id,media_asset_id,license_code) SELECT o.id,o.buyer_id,i.media_asset_id,i.license_code FROM commerce_orders o JOIN commerce_order_items i ON i.order_id=o.id WHERE o.payment_reference=$1 ON CONFLICT DO NOTHING`, reference)
+		if err != nil {
+			return fmt.Errorf("grant download entitlements: %w", err)
+		}
 		return nil
 	})
 	return changed, err
+}
+func (d *Database) BuyerPurchases(ctx context.Context, buyerID string) ([]Purchase, error) {
+	rows, err := d.pool.Query(ctx, `SELECT o.id,o.status,o.payment_reference,o.currency,o.total_amount_minor,o.created_at,o.paid_at,COALESCE(array_agg(e.id::text ORDER BY e.granted_at) FILTER(WHERE e.id IS NOT NULL),'{}') FROM commerce_orders o LEFT JOIN download_entitlements e ON e.order_id=o.id AND e.revoked_at IS NULL WHERE o.buyer_id=$1 GROUP BY o.id ORDER BY o.created_at DESC LIMIT 100`, buyerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Purchase{}
+	for rows.Next() {
+		var item Purchase
+		if err = rows.Scan(&item.ID, &item.Status, &item.PaymentReference, &item.Currency, &item.TotalAmountMinor, &item.CreatedAt, &item.PaidAt, &item.EntitlementIDs); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+func (d *Database) LicensedDownload(ctx context.Context, buyerID, entitlementID, correlationID string) (LicensedDownload, error) {
+	var item LicensedDownload
+	err := d.InTransaction(ctx, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT e.id,a.storage_key,a.original_filename,a.content_type,e.license_code FROM download_entitlements e JOIN commerce_orders o ON o.id=e.order_id JOIN media_assets a ON a.id=e.media_asset_id WHERE e.id=$1 AND e.buyer_id=$2 AND e.revoked_at IS NULL AND o.status='paid' AND a.deleted_at IS NULL`, entitlementID, buyerID).Scan(&item.EntitlementID, &item.StorageKey, &item.Filename, &item.ContentType, &item.LicenseCode); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO licensed_download_audit(entitlement_id,correlation_id) VALUES($1,$2)`, entitlementID, correlationID)
+		return err
+	})
+	return item, err
 }
 
 func (d *Database) UpdateMediaAssetMetadata(ctx context.Context, id, contributorID string, metadata MediaAsset) (MediaAsset, error) {
