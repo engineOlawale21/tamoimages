@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_IDENTITY_API: http://localhost:4000/api/v1
+          NEXT_PUBLIC_MEDIA_API: http://localhost:5000/api/v1
+          API_TIMEOUT_MS: 5000
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false

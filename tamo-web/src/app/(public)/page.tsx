@@ -1,0 +1,7 @@
+import Image from 'next/image';
+import Link from 'next/link';
+import { Search } from 'lucide-react';
+import { Gallery } from '@/components/gallery';
+import { Footer, Header } from '@/components/shell';
+import { catalogAssets, galleryAssets } from '@/lib/media/catalog';
+export default function Home(){return <><Header/><main><section className="hero"><div><h1>Images for your ideas</h1><p>Authentic African visuals for every creative need.</p><form className="heroSearch" action="/search"><Search size={20}/><input name="q" aria-label="Search the collection" placeholder="Explore photos, footage and illustrations"/><button type="submit">Search</button></form></div></section><Gallery assets={galleryAssets}/><section className="pitch"><span>Custom content</span><h2>Tailored visuals crafted for your unlimited use, zero worries.</h2><p>From campaign photography to social video, work with African creators who understand your audience.</p><Link className="primary" href="/custom-content">Send us a brief</Link></section><section className="split"><div><span className="eyebrow">Curated collections</span><h2>Tamo Images, specially selected</h2><p>Dynamic collections of stunning photos, captivating videos and illustrations.</p><Link className="text-link" href="/search">Explore the collection →</Link></div><div className="featureGrid">{catalogAssets.map((asset)=><Image key={asset.id} src={asset.src} width={500} height={420} alt={asset.alt}/>)}</div></section></main><Footer/></>}
