@@ -1,0 +1,183 @@
+name: Platform CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run contracts:validate
+      - run: npm run verify:js
+        env:
+          NEXT_PUBLIC_IDENTITY_API: http://localhost:4000/api/v1
+          NEXT_PUBLIC_MEDIA_API: http://localhost:5000/api/v1
+          API_TIMEOUT_MS: 5000
+
+  media:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        ports:
+          - 5433:5432
+        env:
+          POSTGRES_USER: tamo
+          POSTGRES_PASSWORD: tamo_local
+          POSTGRES_DB: tamo_media
+        options: >-
+          --health-cmd "pg_isready -U tamo -d tamo_media"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.5-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      kafka:
+        image: apache/kafka:3.9.1
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+          KAFKA_LISTENERS: EXTERNAL://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: false
+          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 12
+    env:
+      DATABASE_INTEGRATION_URL: postgresql://tamo:tamo_local@localhost:5433/tamo_media
+      REDIS_INTEGRATION_ADDR: localhost:6379
+      KAFKA_INTEGRATION_BROKER: localhost:9092
+      S3_INTEGRATION_ENDPOINT: http://localhost:9000
+      S3_INTEGRATION_ACCESS_KEY: tamo
+      S3_INTEGRATION_SECRET_KEY: tamo_minio_local
+    defaults:
+      run:
+        working-directory: tamo-media-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tamo-media-service/go.mod
+          cache: true
+      - name: Start MinIO
+        run: docker run --detach --name minio --publish 9000:9000 --env MINIO_ROOT_USER=tamo --env MINIO_ROOT_PASSWORD=tamo_minio_local minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+      - name: Wait for MinIO
+        run: timeout 60 sh -c 'until curl --fail --silent http://localhost:9000/minio/health/ready; do sleep 2; done'
+      - name: Create Kafka smoke-test topic
+        run: docker exec ${{ job.services.kafka.id }} /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic platform.smoke-test.v1 --partitions 1 --replication-factor 1
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+      - run: go build ./...
+
+  auth-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: tamo_identity
+          POSTGRES_PASSWORD: identity_local_only
+          POSTGRES_DB: tamo_identity
+        options: >-
+          --health-cmd "pg_isready -U tamo_identity -d tamo_identity"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.4.5-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://tamo_identity:identity_local_only@localhost:5432/tamo_identity
+      DATABASE_INTEGRATION_URL: postgresql://tamo_identity:identity_local_only@localhost:5432/tamo_identity
+      REDIS_URL: redis://localhost:6379
+      REDIS_INTEGRATION_URL: redis://localhost:6379
+      JWT_SECRET: integration-only-secret-with-at-least-32-characters
+      RATE_LIMIT_HMAC_SECRET: separate-integration-secret-with-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run migration:up --workspace tamo-auth-service
+      - run: npm test --workspace tamo-auth-service -- --runInBand test/authentication-lifecycle.integration.spec.ts test/redis.integration.spec.ts test/authentication.http.integration.spec.ts
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --file tamo-infrastructure/docker-compose.yml config --quiet
+
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - context: tamo-auth-service
+            dockerfile: tamo-auth-service/Dockerfile
+          - context: tamo-media-service
+            dockerfile: tamo-media-service/Dockerfile
+          - context: tamo-media-service
+            dockerfile: tamo-media-service/Dockerfile.worker
+          - context: tamo-web
+            dockerfile: tamo-web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1

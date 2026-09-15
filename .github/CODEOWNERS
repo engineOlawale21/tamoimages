@@ -1,0 +1,9 @@
+# Replace this placeholder with the organisation's real GitHub team.
+* @tamoimages/platform
+
+/tamo-auth-service/ @tamoimages/identity
+/tamo-media-service/ @tamoimages/media
+/tamo-web/ @tamoimages/web
+/tamo-infrastructure/ @tamoimages/platform
+/BACKEND_SECURITY_NDPR_STANDARD.md @tamoimages/security
+/docs/ @tamoimages/platform
