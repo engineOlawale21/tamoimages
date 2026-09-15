@@ -1,0 +1,50 @@
+.drop small { display: block; margin-top: 14px; color: var(--muted); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.upload-queue { margin-top: 24px; border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+.upload-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.upload-actions h2 { margin: 0; }
+.upload-entry { padding: 16px 0; border-top: 1px solid var(--line); }
+.upload-entry > div { display: flex; align-items: center; gap: 12px; }
+.upload-entry span { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.upload-entry b { overflow: hidden; text-overflow: ellipsis; }
+.upload-entry small { color: var(--muted); }
+.upload-entry progress { width: 100%; height: 8px; margin-top: 12px; accent-color: var(--pink); }
+.spin { animation: upload-spin 1s linear infinite; }
+@keyframes upload-spin { to { transform: rotate(360deg); } }
+.media-library { margin-top: 36px; }
+.library-heading { display: flex; align-items: center; justify-content: space-between; }
+.library-heading button { border: 0; background: transparent; cursor: pointer; padding: 8px; }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
+.media-card { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+.media-card img, .media-card video, .media-placeholder { width: 100%; height: 150px; object-fit: cover; background: #f3f3f3; }
+.media-placeholder { display: grid; place-items: center; color: var(--muted); }
+.media-card > div:not(.media-placeholder) { padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.media-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-card small { display: block; padding: 0 12px 12px; color: #8a173d; }
+.media-card small button { border: 0; padding: 0; background: transparent; color: var(--pink); cursor: pointer; text-decoration: underline; }
+.metadata-editor { padding: 0 12px 12px; }
+.metadata-editor > button { border: 0; padding: 0; background: transparent; color: var(--pink); cursor: pointer; }
+.metadata-editor form { display: grid; gap: 10px; margin-top: 12px; }
+.metadata-editor label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.metadata-editor input, .metadata-editor textarea, .metadata-editor select { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 5px; }
+.release-uploader { margin: 0 12px 12px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.release-uploader > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.release-uploader select { min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 5px; }
+.release-file { padding: 8px 12px; border-radius: 5px; background: #eee; cursor: pointer; }
+.release-file input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+.media-status { border-radius: 999px; padding: 4px 8px; font-size: 11px; text-transform: capitalize; background: #eee; }
+.media-status--ready { background: #e3f5e8; color: #176b35; }
+.media-status--failed { background: #fde8ee; color: #8a173d; }
+.batch-manager > form { padding: 20px; border: 1px solid var(--line); border-radius: 8px; }
+.batch-manager > form label { display: block; margin-bottom: 8px; font-weight: 700; }
+.batch-manager > form > div { display: flex; gap: 12px; }
+.batch-manager input, .batch-manager select { min-width: 0; flex: 1; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+.batch-list { display: grid; gap: 14px; }
+.batch-list article { border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
+.batch-list article > div:first-child, .batch-add { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.batch-list h3 { margin: 0; }
+.batch-add { margin: 14px 0; }
+.batch-add button { padding: 12px 18px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+.media-status--submitted, .media-status--in_review { background: #fff1ce; color: #775600; }
+.media-status--approved { background: #e3f5e8; color: #176b35; }
+.review-feedback { padding: 12px; border-left: 3px solid var(--pink); background: #fff5f8; }

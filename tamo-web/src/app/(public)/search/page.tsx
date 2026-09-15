@@ -1,0 +1,20 @@
+import Link from 'next/link';
+import { SlidersHorizontal } from 'lucide-react';
+import { Gallery } from '@/components/gallery';
+import { Footer, Header } from '@/components/shell';
+import { serverApis } from '@/lib/api/server';
+
+type SearchParameters = Record<string,string|string[]|undefined>;
+const value=(input:string|string[]|undefined)=>Array.isArray(input)?input[0]??'':input??'';
+
+export default async function SearchPage({searchParams}:{searchParams:Promise<SearchParameters>}) {
+  const incoming=await searchParams;
+  const parameters=new URLSearchParams();
+  for(const key of ['q','kind','usageType','orientation','location','sort','page']){const item=value(incoming[key]);if(item)parameters.set(key,item);}
+  parameters.set('pageSize','24');
+  let result;
+  try { result=await serverApis().media.searchCatalog(parameters); } catch { result={items:[],page:1,pageSize:24,total:0,totalPages:0}; }
+  const assets=result.items.map(item=>({id:item.id,src:item.variants.find(variant=>variant.kind==='medium')?.url??item.variants.find(variant=>variant.kind==='poster'||variant.kind==='thumbnail')?.url??'',alt:item.title,orientation:item.orientation,category:item.usageType,kind:item.kind})).filter(item=>item.src);
+  const linkFor=(page:number)=>{const next=new URLSearchParams(parameters);next.set('page',String(page));next.delete('pageSize');return `/search?${next}`;};
+  return <><Header/><main className="search-page"><div className="keyword-row" aria-label="Popular searches">{['Young','Portrait','Expression','Woman','Culture','Community'].map(word=><Link key={word} href={`/search?q=${encodeURIComponent(word)}`}>{word}</Link>)}</div><section className="results-heading"><div><h1>Authentic African visuals</h1><p>{result.total} approved assets</p></div><span className="filter-trigger"><SlidersHorizontal size={18}/> Filter by</span></section><div className="results-layout"><aside className="filters" aria-label="Search filters"><form method="get"><label>Search<input name="q" defaultValue={value(incoming.q)} placeholder="Keywords or location"/></label><fieldset><legend>Media type</legend><select name="kind" defaultValue={value(incoming.kind)}><option value="">All media</option><option value="image">Photos</option><option value="video">Videos</option><option value="illustration">Illustrations</option></select></fieldset><fieldset><legend>Orientation</legend><select name="orientation" defaultValue={value(incoming.orientation)}><option value="">Any orientation</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="square">Square</option></select></fieldset><fieldset><legend>Usage</legend><select name="usageType" defaultValue={value(incoming.usageType)}><option value="">All usage</option><option value="creative">Creative</option><option value="editorial">Editorial</option></select></fieldset><label>Location<input name="location" defaultValue={value(incoming.location)}/></label><input type="hidden" name="sort" value={value(incoming.sort)||'newest'}/><button className="primary small" type="submit">Apply filters</button></form></aside><section><div className="result-toolbar"><div><Link className={!value(incoming.usageType)?'active':''} href="/search">All</Link><Link className={value(incoming.usageType)==='creative'?'active':''} href="/search?usageType=creative">Creative</Link><Link className={value(incoming.usageType)==='editorial'?'active':''} href="/search?usageType=editorial">Editorial</Link></div><form method="get"><input type="hidden" name="q" value={value(incoming.q)}/><label>Sort by <select name="sort" defaultValue={value(incoming.sort)||'newest'}><option value="newest">Newest</option><option value="relevance">Relevance</option></select></label><button type="submit">Go</button></form></div><Gallery assets={assets}/><nav className="pagination" aria-label="Search result pages">{result.page>1&&<Link href={linkFor(result.page-1)}>Previous</Link>}<span aria-current="page">Page {result.page}</span>{result.page<result.totalPages&&<Link href={linkFor(result.page+1)}>Next</Link>}</nav></section></div></main><Footer/></>;
+}
