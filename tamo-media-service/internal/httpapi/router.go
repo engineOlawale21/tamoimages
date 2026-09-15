@@ -17,6 +17,7 @@ import (
 	"github.com/tamoimages/media-service/internal/batches"
 	"github.com/tamoimages/media-service/internal/catalog"
 	"github.com/tamoimages/media-service/internal/collections"
+	"github.com/tamoimages/media-service/internal/commerce"
 	"github.com/tamoimages/media-service/internal/releases"
 	"github.com/tamoimages/media-service/internal/uploads"
 )
@@ -33,7 +34,13 @@ type Config struct {
 	Releases      releaseService
 	Catalog       catalogService
 	Collections   collectionService
+	Commerce      commerceService
 	TokenVerifier auth.Verifier
+}
+type commerceService interface {
+	Get(context.Context, string) (commerce.Cart, error)
+	Add(context.Context, string, string, string) (commerce.Cart, error)
+	Remove(context.Context, string, string) (commerce.Cart, error)
 }
 type collectionService interface {
 	Create(context.Context, string, string) (collections.Collection, error)
@@ -103,6 +110,10 @@ type reviewBatchRequest struct {
 type createCollectionRequest struct {
 	Name string `json:"name"`
 }
+type addCartItemRequest struct {
+	MediaAssetID string `json:"mediaAssetId"`
+	LicenseCode  string `json:"licenseCode"`
+}
 type problem struct {
 	Type          string `json:"type"`
 	Title         string `json:"title"`
@@ -165,6 +176,42 @@ func New(cfg Config) http.Handler {
 		}
 		writeJSON(w, asset, http.StatusOK)
 	})
+	mux.Handle("GET /api/v1/cart", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cart, err := cfg.Commerce.Get(r.Context(), principalFrom(r.Context()).Subject)
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Cart unavailable", "The cart could not be retrieved.")
+			return
+		}
+		writeJSON(w, cart, http.StatusOK)
+	})))
+	mux.Handle("POST /api/v1/cart/items", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxBodyBytes)
+		var input addCartItemRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.MediaAssetID) == "" || strings.TrimSpace(input.LicenseCode) == "" {
+			writeProblem(w, r, http.StatusBadRequest, "Invalid cart item", "A media asset and license code are required.")
+			return
+		}
+		cart, err := cfg.Commerce.Add(r.Context(), principalFrom(r.Context()).Subject, input.MediaAssetID, input.LicenseCode)
+		if errors.Is(err, commerce.ErrUnavailable) {
+			writeProblem(w, r, http.StatusUnprocessableEntity, "Item unavailable", "The approved media asset or selected license is unavailable.")
+			return
+		}
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Cart unavailable", "The item could not be added.")
+			return
+		}
+		writeJSON(w, cart, http.StatusOK)
+	})))
+	mux.Handle("DELETE /api/v1/cart/items/{assetId}", roleOnly(cfg.TokenVerifier, "buyer", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cart, err := cfg.Commerce.Remove(r.Context(), principalFrom(r.Context()).Subject, r.PathValue("assetId"))
+		if err != nil {
+			writeProblem(w, r, http.StatusServiceUnavailable, "Cart unavailable", "The item could not be removed.")
+			return
+		}
+		writeJSON(w, cart, http.StatusOK)
+	})))
 	mux.Handle("GET /api/v1/media", contributorOnly(cfg.TokenVerifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page, err := cfg.Uploads.List(r.Context(), principalFrom(r.Context()).Subject)
 		if err != nil {

@@ -101,7 +101,7 @@ jobs:
           go-version-file: tamo-media-service/go.mod
           cache: true
       - name: Start MinIO
-        run: docker run --detach --name minio --publish 9000:9000 --env MINIO_ROOT_USER=tamo --env MINIO_ROOT_PASSWORD=tamo_minio_local minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+        run: docker run --detach --name minio --publish 9000:9000 --env MINIO_ROOT_USER=tamo --env MINIO_ROOT_PASSWORD=tamo_minio_local quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
       - name: Wait for MinIO
         run: timeout 60 sh -c 'until curl --fail --silent http://localhost:9000/minio/health/ready; do sleep 2; done'
       - name: Create Kafka smoke-test topic

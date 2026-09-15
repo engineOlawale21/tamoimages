@@ -12,6 +12,7 @@ import (
 
 	"github.com/tamoimages/media-service/internal/auth"
 	"github.com/tamoimages/media-service/internal/batches"
+	"github.com/tamoimages/media-service/internal/commerce"
 	"github.com/tamoimages/media-service/internal/uploads"
 )
 
@@ -21,6 +22,18 @@ func (f fakeVerifier) Verify(string) (auth.Principal, error) { return f.principa
 
 type fakeUploads struct{ created uploads.CreateInput }
 type fakeBatches struct{ createdName string }
+type fakeCommerce struct{ licenseCode string }
+
+func (f *fakeCommerce) Get(context.Context, string) (commerce.Cart, error) {
+	return commerce.Cart{ID: "cart-1", Items: []commerce.CartItem{}, Currency: "NGN"}, nil
+}
+func (f *fakeCommerce) Add(_ context.Context, _ string, _ string, license string) (commerce.Cart, error) {
+	f.licenseCode = license
+	return commerce.Cart{ID: "cart-1", Currency: "NGN", SubtotalMinor: 1500000}, nil
+}
+func (f *fakeCommerce) Remove(context.Context, string, string) (commerce.Cart, error) {
+	return commerce.Cart{ID: "cart-1", Items: []commerce.CartItem{}, Currency: "NGN"}, nil
+}
 
 func (f *fakeBatches) Create(_ context.Context, contributorID, name string) (batches.Batch, error) {
 	f.createdName = name
@@ -117,6 +130,27 @@ func TestUploadSessionRequiresContributor(t *testing.T) {
 	New(cfg).ServeHTTP(res, req)
 	if res.Code != http.StatusForbidden {
 		t.Fatalf("wanted 403, got %d", res.Code)
+	}
+}
+
+func TestBuyerAddsServerPricedCartItem(t *testing.T) {
+	service := &fakeCommerce{}
+	cfg := testConfig()
+	cfg.Commerce = service
+	cfg.TokenVerifier = fakeVerifier{principal: auth.Principal{Subject: "buyer-1", Role: "buyer"}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cart/items", strings.NewReader(`{"mediaAssetId":"asset-1","licenseCode":"standard-image"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	res := httptest.NewRecorder()
+	New(cfg).ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("wanted 200, got %d: %s", res.Code, res.Body.String())
+	}
+	if service.licenseCode != "standard-image" {
+		t.Fatalf("unexpected license %q", service.licenseCode)
+	}
+	var cart commerce.Cart
+	if err := json.Unmarshal(res.Body.Bytes(), &cart); err != nil || cart.SubtotalMinor != 1500000 {
+		t.Fatalf("unexpected cart: %+v %v", cart, err)
 	}
 }
 

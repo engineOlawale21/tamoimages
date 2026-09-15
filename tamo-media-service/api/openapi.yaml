@@ -21,6 +21,40 @@ paths:
       responses:
         '200': {description: Required dependencies are reachable}
         '503': {description: At least one dependency is unavailable}
+  /api/v1/cart:
+    get:
+      tags: [Commerce]
+      summary: Get the buyer's active cart
+      responses:
+        '200': {description: Active cart with server-calculated subtotal, content: {application/json: {schema: {$ref: '#/components/schemas/Cart'}}}}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /api/v1/cart/items:
+    post:
+      tags: [Commerce]
+      summary: Add or update a licensed media item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mediaAssetId, licenseCode]
+              properties:
+                mediaAssetId: {type: string, format: uuid}
+                licenseCode: {type: string, enum: [standard-image, extended-image, standard-video, extended-video, standard-illustration, extended-illustration]}
+      responses:
+        '200': {description: Updated cart, content: {application/json: {schema: {$ref: '#/components/schemas/Cart'}}}}
+        '422': {$ref: '#/components/responses/Problem'}
+  /api/v1/cart/items/{assetId}:
+    parameters:
+      - {in: path, name: assetId, required: true, schema: {type: string, format: uuid}}
+    delete:
+      tags: [Commerce]
+      summary: Remove an item from the active cart
+      responses:
+        '200': {description: Updated cart, content: {application/json: {schema: {$ref: '#/components/schemas/Cart'}}}}
   /api/v1/media:
     get:
       tags: [Media]
@@ -365,6 +399,24 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Cart:
+      type: object
+      required: [id, items, subtotalMinor, currency]
+      properties:
+        id: {type: string, format: uuid}
+        items:
+          type: array
+          items:
+            type: object
+            required: [mediaAssetId, licenseCode, licenseName, unitAmountMinor, currency]
+            properties:
+              mediaAssetId: {type: string, format: uuid}
+              licenseCode: {type: string}
+              licenseName: {type: string}
+              unitAmountMinor: {type: integer, format: int64, minimum: 1}
+              currency: {type: string, pattern: '^[A-Z]{3}$'}
+        subtotalMinor: {type: integer, format: int64, minimum: 0}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
     CreateUploadSession:
       type: object
       additionalProperties: false

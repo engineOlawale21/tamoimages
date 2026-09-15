@@ -29,6 +29,9 @@
     "npm": ">=10"
   },
   "overrides": {
-    "postcss": "8.5.28"
+    "postcss": "8.5.28",
+    "@nestjs/platform-express": {
+      "multer": "2.3.0"
+    }
   }
 }

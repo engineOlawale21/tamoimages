@@ -14,6 +14,7 @@ import (
 	"github.com/tamoimages/media-service/internal/batches"
 	"github.com/tamoimages/media-service/internal/catalog"
 	"github.com/tamoimages/media-service/internal/collections"
+	"github.com/tamoimages/media-service/internal/commerce"
 	"github.com/tamoimages/media-service/internal/config"
 	"github.com/tamoimages/media-service/internal/httpapi"
 	"github.com/tamoimages/media-service/internal/platform/database"
@@ -55,11 +56,12 @@ func main() {
 	releaseService := releases.New(db, objectStore, cfg.UploadURLTTL)
 	catalogService := catalog.New(db, objectStore, cfg.UploadURLTTL)
 	collectionService := collections.New(db)
+	commerceService := commerce.New(db)
 	server := &http.Server{
 		Addr: cfg.Address(), Handler: httpapi.New(httpapi.Config{
 			WebOrigin: cfg.WebOrigin, DatabaseURL: cfg.DatabaseURL, RedisAddress: cfg.RedisAddress,
 			KafkaBrokers: cfg.KafkaBrokers, S3Endpoint: cfg.S3Endpoint, MaxBodyBytes: cfg.MaxBodyBytes,
-			Uploads: uploadService, Batches: batchService, Releases: releaseService, Catalog: catalogService, Collections: collectionService, TokenVerifier: auth.NewHMACVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
+			Uploads: uploadService, Batches: batchService, Releases: releaseService, Catalog: catalogService, Collections: collectionService, Commerce: commerceService, TokenVerifier: auth.NewHMACVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
 		}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,

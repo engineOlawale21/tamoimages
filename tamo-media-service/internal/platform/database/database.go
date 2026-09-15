@@ -83,6 +83,14 @@ type BuyerCollection struct {
 	ID, BuyerID, Name string
 	MediaIDs          []string
 }
+type BuyerCartItem struct {
+	MediaAssetID, LicenseCode, LicenseName, Currency string
+	UnitAmountMinor                                  int64
+}
+type BuyerCart struct {
+	ID, BuyerID string
+	Items       []BuyerCartItem
+}
 
 type CatalogQuery struct {
 	Text, Kind, UsageType, Orientation, Location, Sort string
@@ -344,6 +352,64 @@ func (d *Database) SetBuyerFavourite(ctx context.Context, buyerID, assetID strin
 	}
 	result, err := d.pool.Exec(ctx, `INSERT INTO buyer_favourites(buyer_id,media_asset_id) SELECT $1,a.id FROM media_assets a WHERE a.id=$2 AND a.status='ready' AND a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM media_batch_items i JOIN media_batches b ON b.id=i.batch_id WHERE i.media_asset_id=a.id AND b.status='approved' AND b.deleted_at IS NULL) ON CONFLICT DO NOTHING`, buyerID, assetID)
 	return result.RowsAffected() > 0, err
+}
+
+func (d *Database) BuyerCart(ctx context.Context, buyerID string) (BuyerCart, error) {
+	var cart BuyerCart
+	err := d.pool.QueryRow(ctx, `INSERT INTO buyer_carts(buyer_id) VALUES($1)
+		ON CONFLICT (buyer_id) WHERE status='active' DO UPDATE SET updated_at=buyer_carts.updated_at
+		RETURNING id,buyer_id`, buyerID).Scan(&cart.ID, &cart.BuyerID)
+	if err != nil {
+		return BuyerCart{}, fmt.Errorf("get active cart: %w", err)
+	}
+	rows, err := d.pool.Query(ctx, `SELECT i.media_asset_id::text,i.license_code,p.name,i.unit_amount_minor,i.currency
+		FROM buyer_cart_items i JOIN license_products p ON p.code=i.license_code
+		WHERE i.cart_id=$1 ORDER BY i.added_at`, cart.ID)
+	if err != nil {
+		return BuyerCart{}, fmt.Errorf("list cart items: %w", err)
+	}
+	defer rows.Close()
+	cart.Items = []BuyerCartItem{}
+	for rows.Next() {
+		var item BuyerCartItem
+		if err = rows.Scan(&item.MediaAssetID, &item.LicenseCode, &item.LicenseName, &item.UnitAmountMinor, &item.Currency); err != nil {
+			return BuyerCart{}, fmt.Errorf("scan cart item: %w", err)
+		}
+		cart.Items = append(cart.Items, item)
+	}
+	return cart, rows.Err()
+}
+
+func (d *Database) AddBuyerCartItem(ctx context.Context, buyerID, assetID, licenseCode string) (BuyerCart, error) {
+	var cartID string
+	err := d.InTransaction(ctx, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO buyer_carts(buyer_id) VALUES($1) ON CONFLICT (buyer_id) WHERE status='active' DO UPDATE SET updated_at=now() RETURNING id`, buyerID).Scan(&cartID); err != nil {
+			return err
+		}
+		result, err := tx.Exec(ctx, `INSERT INTO buyer_cart_items(cart_id,media_asset_id,license_code,unit_amount_minor,currency)
+			SELECT $1,a.id,p.code,p.amount_minor,p.currency FROM media_assets a JOIN license_products p ON p.code=$3 AND p.media_kind=a.kind
+			WHERE a.id=$2 AND a.status='ready' AND a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM media_batch_items i JOIN media_batches b ON b.id=i.batch_id WHERE i.media_asset_id=a.id AND b.status='approved' AND b.deleted_at IS NULL)
+			ON CONFLICT(cart_id,media_asset_id) DO UPDATE SET license_code=excluded.license_code,unit_amount_minor=excluded.unit_amount_minor,currency=excluded.currency`, cartID, assetID, licenseCode)
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected() != 1 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+	if err != nil {
+		return BuyerCart{}, err
+	}
+	return d.BuyerCart(ctx, buyerID)
+}
+
+func (d *Database) RemoveBuyerCartItem(ctx context.Context, buyerID, assetID string) (BuyerCart, error) {
+	_, err := d.pool.Exec(ctx, `DELETE FROM buyer_cart_items i USING buyer_carts c WHERE i.cart_id=c.id AND c.buyer_id=$1 AND c.status='active' AND i.media_asset_id=$2`, buyerID, assetID)
+	if err != nil {
+		return BuyerCart{}, err
+	}
+	return d.BuyerCart(ctx, buyerID)
 }
 
 func (d *Database) UpdateMediaAssetMetadata(ctx context.Context, id, contributorID string, metadata MediaAsset) (MediaAsset, error) {
